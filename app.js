@@ -275,7 +275,15 @@
     const center=p=>p.x+cardW/2;
     people.forEach(p=>{
       const a=pos.get(p.id);if(!a)return;
-      p.spouseIds.forEach(id=>{const b=pos.get(id);if(!b||b.y!==a.y||a.x>=b.x)return;const x1=a.x+cardW,x2=b.x,y=a.y+cardH/2;const mid=(x1+x2)/2;[-12,0,12].forEach(dx=>{lines+=`<path d="M${mid+dx-3} ${y} H${mid+dx+3}" stroke="#9b8065" stroke-width="2.5" stroke-linecap="round" fill="none"/>`;});});
+      p.spouseIds.forEach(id=>{
+        const b=pos.get(id);
+        if(!b||b.y!==a.y||a.x>=b.x)return;
+        const x1=a.x+cardW, x2=b.x, y=a.y+cardH/2;
+        const mid=(x1+x2)/2;
+        // Render literal dash characters, not three SVG strokes. This keeps the
+        // exported spouse marker visibly identical to the on-screen "- - -".
+        lines+=`<text x="${mid}" y="${y+5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" letter-spacing="2" fill="#9b8065">- - -</text>`;
+      });
     });
     const childGroups=new Map();
     people.forEach(child=>{const parents=child.parentIds.filter(id=>pos.has(id)).sort();if(!parents.length)return;const key=parents.join('|');if(!childGroups.has(key))childGroups.set(key,{parents,children:[]});childGroups.get(key).children.push(child.id);});
