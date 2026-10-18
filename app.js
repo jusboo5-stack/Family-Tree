@@ -280,9 +280,15 @@
         if(!b||b.y!==a.y||a.x>=b.x)return;
         const x1=a.x+cardW, x2=b.x, y=a.y+cardH/2;
         const mid=(x1+x2)/2;
-        // Render literal dash characters, not three SVG strokes. This keeps the
-        // exported spouse marker visibly identical to the on-screen "- - -".
-        lines+=`<text x="${mid}" y="${y+5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" letter-spacing="2" fill="#9b8065">- - -</text>`;
+        // Draw three short horizontal dash segments side by side on the same baseline.
+        // These are not three stacked/parallel lines and are not text glyphs.
+        const dashWidth = 5, dashGap = 4, dashCount = 3;
+        const totalDashWidth = dashCount * dashWidth + (dashCount - 1) * dashGap;
+        const dashStartX = mid - totalDashWidth / 2;
+        for (let i = 0; i < dashCount; i++) {
+          const dx = dashStartX + i * (dashWidth + dashGap);
+          lines += `<line x1="${dx}" y1="${y}" x2="${dx + dashWidth}" y2="${y}" stroke="#9b8065" stroke-width="2.5" stroke-linecap="round"/>`;
+        }
       });
     });
     const childGroups=new Map();
