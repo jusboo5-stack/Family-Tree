@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f1e9">
+  <title>Family Tree</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">PERSONAL FAMILY RECORDS</p>
+      <h1>Family Tree</h1>
+      <p class="subtitle">Keep family connections and contact details in one place.</p>
+    </div>
+    <div class="header-actions">
+      <button id="exportJsonBtn" class="button button-light" type="button">Back up JSON</button>
+      <button id="exportCsvBtn" class="button button-light" type="button">Download CSV</button>
+      <button id="exportImageBtn" class="button button-primary" type="button">Export image</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="notice" aria-label="Privacy notice">
+      <strong>Stored on this device</strong>
+      <span>Your records stay in this browser's local storage. Export a backup regularly. Import/export uses Excel-compatible CSV files; standard .xlsx files are not supported without a library.</span>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <h2 id="formTitle">Add a person</h2>
+          
+        </div>
+        <button id="cancelEditBtn" class="button button-text hidden" type="button">Cancel edit</button>
+      </div>
+      <form id="personForm" novalidate>
+        <input type="hidden" id="personId">
+        <div class="form-grid">
+          <label>
+            Full name <span class="required">*</span>
+            <input id="name" name="name" type="text" maxlength="120" autocomplete="name" required placeholder="e.g. Tan Ah Kow">
+          </label>
+          <label>
+            Relationship <span class="required">*</span>
+            <input id="relationship" name="relationship" type="text" maxlength="100" required placeholder="e.g. Grandfather, aunt, cousin">
+          </label>
+          <label>
+            Status
+            <select id="status" name="status" required>
+              <option value="Alive">Alive</option>
+              <option value="Deceased">Deceased</option>
+            </select>
+          </label>
+          <label>
+            Phone number
+            <input id="phone" name="phone" type="tel" maxlength="40" autocomplete="tel" placeholder="Optional">
+          </label>
+          <label>
+            Parents
+            <select id="parentIds" name="parentIds" multiple size="4" aria-describedby="parentHelp"></select>
+            <small id="parentHelp">Select one or more parents. Use Ctrl (Windows) or Command (Mac) to select multiple people.</small>
+          </label>
+          <label>
+            Spouses / partners
+            <select id="spouseIds" name="spouseIds" multiple size="4" aria-describedby="spouseHelp"></select>
+            <small id="spouseHelp">Select any number of spouses or partners. Multiple unions are supported.</small>
+          </label>
+          <label>
+            Children
+            <select id="childrenIds" name="childrenIds" multiple size="4" aria-describedby="childrenHelp"></select>
+            <small id="childrenHelp">Select one or more children. Use Ctrl (Windows) or Command (Mac) to select multiple people.</small>
+          </label>
+        </div>
+        <p id="formError" class="error-message" role="alert"></p>
+        <div class="form-actions">
+          <button class="button button-primary" id="saveBtn" type="submit">Add person</button>
+          <button class="button button-light" type="reset" id="resetBtn">Clear form</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading list-heading">
+        <div>
+          <h2>Your family</h2>
+          <p id="recordCount" class="muted">0 people</p>
+        </div>
+        <label class="search-label">
+          <span class="sr-only">Search family records</span>
+          <input id="searchInput" type="search" placeholder="Search names, relationships…">
+        </label>
+      </div>
+
+      <div class="toolbar">
+        <label class="button button-light file-button">
+          Import CSV
+          <input id="importCsvInput" type="file" accept=".csv,text/csv">
+        </label>
+        <label class="button button-light file-button">
+          Import JSON backup
+          <input id="importJsonInput" type="file" accept=".json,application/json">
+        </label>
+        <span class="muted toolbar-help">CSV files can be opened and saved with Excel.</span>
+      </div>
+      <p id="importMessage" class="message" role="status"></p>
+      <div id="peopleList" class="people-list"></div>
+      <div id="emptyState" class="empty-state">
+        <div class="empty-icon" aria-hidden="true">⌂</div>
+        <h3>No family records yet</h3>
+        <p>Add your first person using the form above, or import a CSV file.</p>
+      </div>
+    </section>
+
+    <section class="panel tree-panel">
+      <div class="section-heading">
+        <div>
+          <h2>Family tree</h2>
+          
+        </div>
+      </div>
+      <div id="treeView" class="tree-view">
+        <p class="muted">Add people to build your family tree.</p>
+      </div>
+    </section>
+
+    <footer class="footer-note">
+      <p>Privacy tip: this app does not send your records anywhere. Anyone with access to this browser profile may be able to view them. Avoid storing information you cannot safely keep on this device.</p>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
