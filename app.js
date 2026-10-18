@@ -262,7 +262,7 @@
     downloadBlob(new Blob(["\uFEFF"+[headers,...rows].map(r=>r.map(csvEscape).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8"}),"family-tree.csv");showMessage("Excel-compatible CSV downloaded.");}
   function xmlEscape(v){return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");}
   function exportSvg(){
-    const cardW=230,cardH=104,spouseGap=16,unitGap=42,rowGap=118,pad=34;
+    const cardW=230,cardH=104,spouseGap=54,unitGap=42,rowGap=118,pad=34;
     const {generation,units}=getGenerationMap(); const rows=new Map();
     units.forEach(members=>{const d=generation.get(members[0].id)||0;if(!rows.has(d))rows.set(d,[]);rows.get(d).push(members.slice().sort((a,b)=>(a.layoutOrder||0)-(b.layoutOrder||0)||a.name.localeCompare(b.name)));});
     const pos=new Map();let maxW=0;
@@ -275,7 +275,7 @@
     const center=p=>p.x+cardW/2;
     people.forEach(p=>{
       const a=pos.get(p.id);if(!a)return;
-      p.spouseIds.forEach(id=>{const b=pos.get(id);if(!b||b.y!==a.y||a.x>=b.x)return;const x1=a.x+cardW,x2=b.x,y=a.y+cardH/2;const mid=(x1+x2)/2;[-5,0,5].forEach(dy=>{lines+=`<path d="M${x1} ${y+dy} H${x2}" stroke="#9b8065" stroke-width="2.5" fill="none"/>`;});});
+      p.spouseIds.forEach(id=>{const b=pos.get(id);if(!b||b.y!==a.y||a.x>=b.x)return;const x1=a.x+cardW,x2=b.x,y=a.y+cardH/2;const mid=(x1+x2)/2;[-12,0,12].forEach(dx=>{lines+=`<path d="M${mid+dx-3} ${y} H${mid+dx+3}" stroke="#9b8065" stroke-width="2.5" stroke-linecap="round" fill="none"/>`;});});
     });
     const childGroups=new Map();
     people.forEach(child=>{const parents=child.parentIds.filter(id=>pos.has(id)).sort();if(!parents.length)return;const key=parents.join('|');if(!childGroups.has(key))childGroups.set(key,{parents,children:[]});childGroups.get(key).children.push(child.id);});
