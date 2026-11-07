@@ -149,6 +149,7 @@
       groups.get(key).children.push(child.id);
     });
     const paths = [];
+    const crossovers = [];
     const cx = r => r.left + r.width / 2 - rootRect.left;
     const top = r => r.top - rootRect.top;
     const bottom = r => r.bottom - rootRect.top;
@@ -183,9 +184,25 @@
         paths.push(`M${g.parentCenter} ${g.pr.length>1?g.parentBarY:bottom(g.pr[0])} V${midY} H${g.childCenter} V${g.childBarY}`);
         if(g.childXs.length>1) paths.push(`M${Math.min(...g.childXs)} ${g.childBarY} H${Math.max(...g.childXs)}`);
         g.cr.forEach(r=>paths.push(`M${cx(r)} ${g.childBarY} V${top(r)}`));
+        g.route={parentX:g.parentCenter,childX:g.childCenter,parentY:g.parentBarY,childY:g.childBarY,midY};
       });
     });
-    const svg = `<svg class="tree-lines" aria-hidden="true" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${paths.map(d=>`<path d="${d}"/>`).join('')}</svg>`;
+    // Where unrelated family branches cross, visually bridge the vertical branch
+    // over the horizontal one. This prevents a crossing from looking like a shared
+    // parent junction (especially when both couples have two parents).
+    routedGroups.forEach((a,i)=>routedGroups.slice(i+1).forEach(b=>{
+      for (const h of [a.route,b.route]) for (const v of [a.route,b.route]) {
+        if (h===v) continue;
+        const x=v.parentX, y=h.midY;
+        if (y>=Math.min(v.parentY,v.midY)-1 && y<=Math.max(v.parentY,v.midY)+1 && x>Math.min(h.parentX,h.childX)+1 && x<Math.max(h.parentX,h.childX)-1)
+          crossovers.push({x,y});
+        const x2=v.childX;
+        if (y>=Math.min(v.midY,v.childY)-1 && y<=Math.max(v.midY,v.childY)+1 && x2>Math.min(h.parentX,h.childX)+1 && x2<Math.max(h.parentX,h.childX)-1)
+          crossovers.push({x:x2,y});
+      }
+    }));
+    const bridge = crossovers.map(({x,y})=>`<circle cx="${x}" cy="${y}" r="5" fill="#fffdf9"/><path d="M${x} ${y-6} V${y+6}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`).join('');
+    const svg = `<svg class="tree-lines" aria-hidden="true" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${paths.map(d=>`<path d="${d}"/>`).join('')}${bridge}</svg>`;
     root.insertAdjacentHTML('afterbegin', svg);
   }
   let draggedUnitId = null;
@@ -310,6 +327,7 @@
       return {ps,cs,parentXs,childXs,parentBottom,childTop,pBar,cBar,pc,cc,band:`${parentBottom}:${childTop}`};
     }).filter(Boolean);
     const exportBands=new Map();
+    const exportCrossovers=[];
     routedExportGroups.forEach(g=>{if(!exportBands.has(g.band))exportBands.set(g.band,[]);exportBands.get(g.band).push(g);});
     exportBands.forEach(items=>{
       items.sort((a,b)=>a.cc-b.cc);
@@ -323,8 +341,19 @@
         lines+=`<path d="M${g.pc} ${g.ps.length>1?g.pBar:g.parentBottom} V${mid} H${g.cc} V${g.cBar}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
         if(g.childXs.length>1)lines+=`<path d="M${Math.min(...g.childXs)} ${g.cBar} H${Math.max(...g.childXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
         g.cs.forEach(p=>{lines+=`<path d="M${center(p)} ${g.cBar} V${p.y}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
+        g.route={parentX:g.pc,childX:g.cc,parentY:g.pBar,childY:g.cBar,midY:mid};
       });
     });
+    routedExportGroups.forEach((a,i)=>routedExportGroups.slice(i+1).forEach(b=>{
+      for(const h of [a.route,b.route]) for(const v of [a.route,b.route]){
+        if(h===v)continue;
+        const x=v.parentX,y=h.midY;
+        if(y>=Math.min(v.parentY,v.midY)-1&&y<=Math.max(v.parentY,v.midY)+1&&x>Math.min(h.parentX,h.childX)+1&&x<Math.max(h.parentX,h.childX)-1)exportCrossovers.push({x,y});
+        const x2=v.childX;
+        if(y>=Math.min(v.midY,v.childY)-1&&y<=Math.max(v.midY,v.childY)+1&&x2>Math.min(h.parentX,h.childX)+1&&x2<Math.max(h.parentX,h.childX)-1)exportCrossovers.push({x:x2,y});
+      }
+    }));
+    exportCrossovers.forEach(({x,y})=>{lines+=`<circle cx="${x}" cy="${y}" r="5" fill="#fffdf9"/><path d="M${x} ${y-6} V${y+6}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
     people.forEach(p=>{const a=pos.get(p.id);if(!a)return;const fill=p.status==="Deceased"?"#eee2dc":"#f7faf7";cards+=`<g><rect x="${a.x}" y="${a.y}" width="${cardW}" height="${cardH}" rx="10" fill="${fill}" stroke="#aab8ad"/><text x="${a.x+12}" y="${a.y+24}" font-family="Arial" font-size="14" font-weight="700" fill="#242a28">${xmlEscape(p.name.slice(0,28))}</text><text x="${a.x+12}" y="${a.y+44}" font-family="Arial" font-size="11" fill="#65736a">${xmlEscape(p.relationship.slice(0,32))}</text><text x="${a.x+12}" y="${a.y+70}" font-family="Arial" font-size="10" fill="#65736a">${xmlEscape(p.phone.slice(0,32))}</text></g>`;});
     const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW+pad}" height="${height}" viewBox="0 0 ${maxW+pad} ${height}"><rect width="100%" height="100%" fill="#fffdf9"/><text x="${pad}" y="20" font-family="Arial" font-size="16" font-weight="700" fill="#315d4c">Family Tree</text>${lines}${cards}</svg>`;
     downloadBlob(new Blob([svg],{type:"image/svg+xml;charset=utf-8"}),"family-tree.svg");showMessage("Family tree image (SVG) downloaded.");
