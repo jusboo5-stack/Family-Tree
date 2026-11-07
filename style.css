@@ -173,3 +173,7 @@ small { font-size: .78rem; line-height: 1.4; font-weight: 400; color: var(--mute
 .tree-family-unit.dragging { opacity: .45; }
 .tree-family-unit.drag-over { outline: 2px dashed #688b77; outline-offset: 5px; }
 .tree-family-unit[draggable="true"]:active { cursor: grabbing; }
+
+/* Explicit child-row positioning: each sibling group sits below its own parent pair. */
+.tree-generation .generation-people { position: relative; display: block; min-height: 104px; }
+.tree-generation .tree-family-unit { position: absolute; top: 0; }

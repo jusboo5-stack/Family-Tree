@@ -143,46 +143,69 @@
     rows.forEach(row => row.querySelectorAll('.tree-family-unit').forEach(unit => {
       unit.querySelectorAll('[data-person-id]').forEach(card => unitByPerson.set(card.dataset.personId, unit));
     }));
+
+    // Use absolute row coordinates instead of relative offsets. Relative offsets
+    // leave the original flex positions in the layout and can accumulate badly.
     rows.forEach(row => {
-      const rowRect = row.querySelector('.generation-people').getBoundingClientRect();
+      const lane = row.querySelector('.generation-people');
+      if (!lane) return;
+      const units = [...lane.querySelectorAll(':scope > .tree-family-unit')];
+      const rowLeft = lane.getBoundingClientRect().left;
       const groups = new Map();
-      row.querySelectorAll('.tree-family-unit').forEach(unit => {
-        const firstCard = unit.querySelector('[data-person-id]');
-        const person = firstCard && personById(firstCard.dataset.personId);
-        const parents = person ? person.parentIds.filter(id => unitByPerson.has(id)).sort() : [];
-        if (!parents.length) return;
+      const roots = [];
+      units.forEach(unit => {
+        const ids = [...unit.querySelectorAll('[data-person-id]')].map(el => el.dataset.personId);
+        const parents = [...new Set(ids.flatMap(id => personById(id)?.parentIds || []).filter(id => unitByPerson.has(id)))].sort();
+        if (!parents.length) { roots.push(unit); return; }
         const key = parents.join('|');
         if (!groups.has(key)) groups.set(key, {parents, units:[]});
         groups.get(key).units.push(unit);
       });
+
+      const widthOf = el => el.getBoundingClientRect().width;
+      const placeGroup = (items, target, cursor) => {
+        const gap = 42;
+        const total = items.reduce((sum, el) => sum + widthOf(el), 0) + gap * Math.max(0, items.length - 1);
+        const left = Math.max(cursor, target - total / 2);
+        let x = left;
+        items.forEach(el => {
+          el.style.position = 'absolute';
+          el.style.left = `${x}px`;
+          el.style.top = '0px';
+          x += widthOf(el) + gap;
+        });
+        return left + total + gap;
+      };
+
+      lane.style.position = 'relative';
+      lane.style.display = 'block';
+      let cursor = 0;
+      roots.sort((a,b) => {
+        const pa=personById(a.querySelector('[data-person-id]')?.dataset.personId);
+        const pb=personById(b.querySelector('[data-person-id]')?.dataset.personId);
+        return ((pa?.layoutOrder||0)-(pb?.layoutOrder||0)) || (pa?.name||'').localeCompare(pb?.name||'');
+      });
+      roots.forEach(unit => { cursor = placeGroup([unit], cursor + widthOf(unit)/2, cursor); });
+
       const placements = [...groups.values()].map(group => {
         const parentUnits = [...new Set(group.parents.map(id => unitByPerson.get(id)))];
-        const parentRects = parentUnits.map(el => el.getBoundingClientRect());
-        const target = (Math.min(...parentRects.map(r => r.left)) + Math.max(...parentRects.map(r => r.right))) / 2;
+        const rects = parentUnits.map(el => el.getBoundingClientRect());
+        const target = (Math.min(...rects.map(r=>r.left)) + Math.max(...rects.map(r=>r.right))) / 2 - rowLeft;
         group.units.sort((a,b) => {
-          const ap=personById(a.querySelector('[data-person-id]').dataset.personId);
-          const bp=personById(b.querySelector('[data-person-id]').dataset.personId);
-          return ((ap?.layoutOrder||0)-(bp?.layoutOrder||0)) || (ap?.name||'').localeCompare(bp?.name||'');
+          const pa=personById(a.querySelector('[data-person-id]')?.dataset.personId);
+          const pb=personById(b.querySelector('[data-person-id]')?.dataset.personId);
+          return ((pa?.layoutOrder||0)-(pb?.layoutOrder||0)) || (pa?.name||'').localeCompare(pb?.name||'');
         });
-        const gap = 42;
-        const width = group.units.reduce((sum,el)=>sum+el.getBoundingClientRect().width,0)+gap*Math.max(0,group.units.length-1);
-        return {group,target,width};
+        return {group,target};
       }).sort((a,b)=>a.target-b.target);
-      let cursor = 0;
-      placements.forEach(({group,target,width}) => {
-        let left = target - rowRect.left - width/2;
-        if (left < cursor) left = cursor;
-        let x = left;
-        group.units.forEach(unit => {
-          const rect = unit.getBoundingClientRect();
-          const baseLeft = rect.left - rowRect.left;
-          unit.style.position = 'relative';
-          unit.style.left = `${x-baseLeft}px`;
-          x += rect.width + 42;
-        });
-        cursor = left + width + 42;
-      });
+      placements.forEach(({group,target}) => { cursor = placeGroup(group.units, target, cursor); });
+      const maxBottom = Math.max(0, ...units.map(el => el.getBoundingClientRect().height));
+      const maxRight = Math.max(0, ...units.map(el => parseFloat(el.style.left||'0') + widthOf(el)));
+      lane.style.width = `${maxRight}px`;
+      lane.style.height = `${maxBottom}px`;
     });
+    const maxRight = Math.max(0, ...rows.map(row => row.querySelector('.generation-people')?.scrollWidth || 0));
+    root.style.width = `${maxRight}px`;
   }
   function findConnectorCrossings(groups, geometry) {
     const shapes = groups.map(geometry);
@@ -357,7 +380,7 @@
       const familyUnits=rows.get(d).sort((a,b)=>{const ao=Math.min(...a.map(p=>p.layoutOrder||0)),bo=Math.min(...b.map(p=>p.layoutOrder||0));return (ao-bo)||a[0].name.localeCompare(b[0].name);});
       const unitWidth=members=>members.length*cardW+Math.max(0,members.length-1)*spouseGap;
       const groups=new Map();
-      familyUnits.forEach(members=>{const parents=(members[0].parentIds||[]).filter(id=>pos.has(id)).sort();if(!parents.length)return;const key=parents.join('|');if(!groups.has(key))groups.set(key,{parents,units:[]});groups.get(key).units.push(members);});
+      familyUnits.forEach(members=>{const parents=[...new Set(members.flatMap(person=>person.parentIds||[]).filter(id=>pos.has(id)))].sort();if(!parents.length)return;const key=parents.join('|');if(!groups.has(key))groups.set(key,{parents,units:[]});groups.get(key).units.push(members);});
       const placements=[...groups.values()].map(group=>{
         const parentRects=group.parents.map(id=>{const p=pos.get(id);return {left:p.x,right:p.x+cardW};});
         const target=(Math.min(...parentRects.map(r=>r.left))+Math.max(...parentRects.map(r=>r.right)))/2;
