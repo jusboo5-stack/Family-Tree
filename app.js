@@ -132,6 +132,19 @@
     treeView.innerHTML = `<div class="tree-generations">${rows}</div>`;
     drawTreeConnections();
   }
+  function findConnectorCrossings(groups, geometry) {
+    const shapes = groups.map(geometry);
+    const points = new Map();
+    shapes.forEach((a, i) => shapes.forEach((b, j) => {
+      if (i === j) return;
+      a.horizontal.forEach(h => b.vertical.forEach(v => {
+        const withinY = h.y > Math.min(v.y1, v.y2) + 2 && h.y < Math.max(v.y1, v.y2) - 2;
+        const withinX = v.x > Math.min(h.x1, h.x2) + 2 && v.x < Math.max(h.x1, h.x2) - 2;
+        if (withinX && withinY) points.set(`${Math.round(v.x)}:${Math.round(h.y)}`, {x:v.x,y:h.y});
+      }));
+    }));
+    return [...points.values()];
+  }
   function drawTreeConnections() {
     const root = treeView.querySelector('.tree-generations');
     if (!root) return;
@@ -149,7 +162,6 @@
       groups.get(key).children.push(child.id);
     });
     const paths = [];
-    const crossovers = [];
     const cx = r => r.left + r.width / 2 - rootRect.left;
     const top = r => r.top - rootRect.top;
     const bottom = r => r.bottom - rootRect.top;
@@ -175,8 +187,8 @@
     bands.forEach(items=>{
       items.sort((a,b)=>a.childCenter-b.childCenter);
       items.forEach((g,i)=>{
-        const offset=(i-(items.length-1)/2)*14;
-        const midY=Math.max(g.parentBarY+7,Math.min(g.childBarY-7,(g.parentBarY+g.childBarY)/2+offset));
+        // Give each unrelated parent set a clearly separate lane within the generation gap.
+        const midY=g.parentBarY+(g.childBarY-g.parentBarY)*(i+1)/(items.length+1);
         if(g.pr.length>1){
           g.pr.forEach(r=>paths.push(`M${cx(r)} ${bottom(r)} V${g.parentBarY}`));
           paths.push(`M${Math.min(...g.px)} ${g.parentBarY} H${Math.max(...g.px)}`);
@@ -187,20 +199,20 @@
         g.route={parentX:g.parentCenter,childX:g.childCenter,parentY:g.parentBarY,childY:g.childBarY,midY};
       });
     });
-    // Where unrelated family branches cross, visually bridge the vertical branch
-    // over the horizontal one. This prevents a crossing from looking like a shared
-    // parent junction (especially when both couples have two parents).
-    routedGroups.forEach((a,i)=>routedGroups.slice(i+1).forEach(b=>{
-      for (const h of [a.route,b.route]) for (const v of [a.route,b.route]) {
-        if (h===v) continue;
-        const x=v.parentX, y=h.midY;
-        if (y>=Math.min(v.parentY,v.midY)-1 && y<=Math.max(v.parentY,v.midY)+1 && x>Math.min(h.parentX,h.childX)+1 && x<Math.max(h.parentX,h.childX)-1)
-          crossovers.push({x,y});
-        const x2=v.childX;
-        if (y>=Math.min(v.midY,v.childY)-1 && y<=Math.max(v.midY,v.childY)+1 && x2>Math.min(h.parentX,h.childX)+1 && x2<Math.max(h.parentX,h.childX)-1)
-          crossovers.push({x:x2,y});
-      }
-    }));
+    // Detect every horizontal/vertical intersection between different parent groups.
+    // The white gap and redrawn vertical stroke make crossings visibly separate,
+    // including intersections with parent stems and child stems (not just trunks).
+    const crossovers = findConnectorCrossings(routedGroups, g => {
+      const horizontal = [{x1:Math.min(g.parentCenter,g.childCenter),x2:Math.max(g.parentCenter,g.childCenter),y:g.route.midY}];
+      if (g.pr.length > 1) horizontal.push({x1:Math.min(...g.px),x2:Math.max(...g.px),y:g.parentBarY});
+      if (g.childXs.length > 1) horizontal.push({x1:Math.min(...g.childXs),x2:Math.max(...g.childXs),y:g.childBarY});
+      const vertical = [];
+      g.pr.forEach((r,i)=>vertical.push({x:g.px[i],y1:bottom(r),y2:g.parentBarY}));
+      vertical.push({x:g.parentCenter,y1:g.pr.length>1?g.parentBarY:bottom(g.pr[0]),y2:g.route.midY});
+      vertical.push({x:g.childCenter,y1:g.route.midY,y2:g.childBarY});
+      g.cr.forEach(r=>vertical.push({x:cx(r),y1:g.childBarY,y2:top(r)}));
+      return {horizontal,vertical};
+    });
     const bridge = crossovers.map(({x,y})=>`<circle cx="${x}" cy="${y}" r="5" fill="#fffdf9"/><path d="M${x} ${y-6} V${y+6}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`).join('');
     const svg = `<svg class="tree-lines" aria-hidden="true" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${paths.map(d=>`<path d="${d}"/>`).join('')}${bridge}</svg>`;
     root.insertAdjacentHTML('afterbegin', svg);
@@ -327,13 +339,12 @@
       return {ps,cs,parentXs,childXs,parentBottom,childTop,pBar,cBar,pc,cc,band:`${parentBottom}:${childTop}`};
     }).filter(Boolean);
     const exportBands=new Map();
-    const exportCrossovers=[];
     routedExportGroups.forEach(g=>{if(!exportBands.has(g.band))exportBands.set(g.band,[]);exportBands.get(g.band).push(g);});
     exportBands.forEach(items=>{
       items.sort((a,b)=>a.cc-b.cc);
       items.forEach((g,i)=>{
-        const offset=(i-(items.length-1)/2)*14;
-        const mid=Math.max(g.pBar+7,Math.min(g.cBar-7,(g.pBar+g.cBar)/2+offset));
+        // Keep unrelated two-parent branches on visibly distinct routing lanes.
+        const mid=g.pBar+(g.cBar-g.pBar)*(i+1)/(items.length+1);
         if(g.ps.length>1){
           g.ps.forEach(p=>{lines+=`<path d="M${center(p)} ${p.y+cardH} V${g.pBar}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
           lines+=`<path d="M${Math.min(...g.parentXs)} ${g.pBar} H${Math.max(...g.parentXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
@@ -344,15 +355,17 @@
         g.route={parentX:g.pc,childX:g.cc,parentY:g.pBar,childY:g.cBar,midY:mid};
       });
     });
-    routedExportGroups.forEach((a,i)=>routedExportGroups.slice(i+1).forEach(b=>{
-      for(const h of [a.route,b.route]) for(const v of [a.route,b.route]){
-        if(h===v)continue;
-        const x=v.parentX,y=h.midY;
-        if(y>=Math.min(v.parentY,v.midY)-1&&y<=Math.max(v.parentY,v.midY)+1&&x>Math.min(h.parentX,h.childX)+1&&x<Math.max(h.parentX,h.childX)-1)exportCrossovers.push({x,y});
-        const x2=v.childX;
-        if(y>=Math.min(v.midY,v.childY)-1&&y<=Math.max(v.midY,v.childY)+1&&x2>Math.min(h.parentX,h.childX)+1&&x2<Math.max(h.parentX,h.childX)-1)exportCrossovers.push({x:x2,y});
-      }
-    }));
+    const exportCrossovers=findConnectorCrossings(routedExportGroups,g=>{
+      const horizontal=[{x1:Math.min(g.pc,g.cc),x2:Math.max(g.pc,g.cc),y:g.route.midY}];
+      if(g.ps.length>1)horizontal.push({x1:Math.min(...g.parentXs),x2:Math.max(...g.parentXs),y:g.pBar});
+      if(g.childXs.length>1)horizontal.push({x1:Math.min(...g.childXs),x2:Math.max(...g.childXs),y:g.cBar});
+      const vertical=[];
+      g.ps.forEach(p=>vertical.push({x:center(p),y1:p.y+cardH,y2:g.pBar}));
+      vertical.push({x:g.pc,y1:g.ps.length>1?g.pBar:g.parentBottom,y2:g.route.midY});
+      vertical.push({x:g.cc,y1:g.route.midY,y2:g.cBar});
+      g.cs.forEach(p=>vertical.push({x:center(p),y1:g.cBar,y2:p.y}));
+      return {horizontal,vertical};
+    });
     exportCrossovers.forEach(({x,y})=>{lines+=`<circle cx="${x}" cy="${y}" r="5" fill="#fffdf9"/><path d="M${x} ${y-6} V${y+6}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
     people.forEach(p=>{const a=pos.get(p.id);if(!a)return;const fill=p.status==="Deceased"?"#eee2dc":"#f7faf7";cards+=`<g><rect x="${a.x}" y="${a.y}" width="${cardW}" height="${cardH}" rx="10" fill="${fill}" stroke="#aab8ad"/><text x="${a.x+12}" y="${a.y+24}" font-family="Arial" font-size="14" font-weight="700" fill="#242a28">${xmlEscape(p.name.slice(0,28))}</text><text x="${a.x+12}" y="${a.y+44}" font-family="Arial" font-size="11" fill="#65736a">${xmlEscape(p.relationship.slice(0,32))}</text><text x="${a.x+12}" y="${a.y+70}" font-family="Arial" font-size="10" fill="#65736a">${xmlEscape(p.phone.slice(0,32))}</text></g>`;});
     const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW+pad}" height="${height}" viewBox="0 0 ${maxW+pad} ${height}"><rect width="100%" height="100%" fill="#fffdf9"/><text x="${pad}" y="20" font-family="Arial" font-size="16" font-weight="700" fill="#315d4c">Family Tree</text>${lines}${cards}</svg>`;
