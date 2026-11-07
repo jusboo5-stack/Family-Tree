@@ -130,7 +130,59 @@
       return `<div class="tree-generation" data-generation="${d}"><div class="generation-people">${html}</div></div>`;
     }).join('');
     treeView.innerHTML = `<div class="tree-generations">${rows}</div>`;
+    alignChildUnitsUnderParents();
     drawTreeConnections();
+  }
+  // Position each distinct sibling group directly beneath its own parent family unit.
+  // This avoids placing every child unit at the left edge of the generation row.
+  function alignChildUnitsUnderParents() {
+    const root = treeView.querySelector('.tree-generations');
+    if (!root) return;
+    const rows = [...root.querySelectorAll('.tree-generation')];
+    const unitByPerson = new Map();
+    rows.forEach(row => row.querySelectorAll('.tree-family-unit').forEach(unit => {
+      unit.querySelectorAll('[data-person-id]').forEach(card => unitByPerson.set(card.dataset.personId, unit));
+    }));
+    rows.forEach(row => {
+      const rowRect = row.querySelector('.generation-people').getBoundingClientRect();
+      const groups = new Map();
+      row.querySelectorAll('.tree-family-unit').forEach(unit => {
+        const firstCard = unit.querySelector('[data-person-id]');
+        const person = firstCard && personById(firstCard.dataset.personId);
+        const parents = person ? person.parentIds.filter(id => unitByPerson.has(id)).sort() : [];
+        if (!parents.length) return;
+        const key = parents.join('|');
+        if (!groups.has(key)) groups.set(key, {parents, units:[]});
+        groups.get(key).units.push(unit);
+      });
+      const placements = [...groups.values()].map(group => {
+        const parentUnits = [...new Set(group.parents.map(id => unitByPerson.get(id)))];
+        const parentRects = parentUnits.map(el => el.getBoundingClientRect());
+        const target = (Math.min(...parentRects.map(r => r.left)) + Math.max(...parentRects.map(r => r.right))) / 2;
+        group.units.sort((a,b) => {
+          const ap=personById(a.querySelector('[data-person-id]').dataset.personId);
+          const bp=personById(b.querySelector('[data-person-id]').dataset.personId);
+          return ((ap?.layoutOrder||0)-(bp?.layoutOrder||0)) || (ap?.name||'').localeCompare(bp?.name||'');
+        });
+        const gap = 42;
+        const width = group.units.reduce((sum,el)=>sum+el.getBoundingClientRect().width,0)+gap*Math.max(0,group.units.length-1);
+        return {group,target,width};
+      }).sort((a,b)=>a.target-b.target);
+      let cursor = 0;
+      placements.forEach(({group,target,width}) => {
+        let left = target - rowRect.left - width/2;
+        if (left < cursor) left = cursor;
+        let x = left;
+        group.units.forEach(unit => {
+          const rect = unit.getBoundingClientRect();
+          const baseLeft = rect.left - rowRect.left;
+          unit.style.position = 'relative';
+          unit.style.left = `${x-baseLeft}px`;
+          x += rect.width + 42;
+        });
+        cursor = left + width + 42;
+      });
+    });
   }
   function findConnectorCrossings(groups, geometry) {
     const shapes = groups.map(geometry);
@@ -188,7 +240,7 @@
       items.sort((a,b)=>a.childCenter-b.childCenter);
       items.forEach((g,i)=>{
         // Give each unrelated parent set a clearly separate lane within the generation gap.
-        const midY=g.parentBarY+(g.childBarY-g.parentBarY)*(i+1)/(items.length+1);
+        const midY=g.parentBarY+(g.childBarY-g.parentBarY)/2;
         if(g.pr.length>1){
           g.pr.forEach(r=>paths.push(`M${cx(r)} ${bottom(r)} V${g.parentBarY}`));
           paths.push(`M${Math.min(...g.px)} ${g.parentBarY} H${Math.max(...g.px)}`);
@@ -300,11 +352,28 @@
     const cardW=230,cardH=104,spouseGap=54,unitGap=42,rowGap=118,pad=34;
     const {generation,units}=getGenerationMap(); const rows=new Map();
     units.forEach(members=>{const d=generation.get(members[0].id)||0;if(!rows.has(d))rows.set(d,[]);rows.get(d).push(members.slice().sort((a,b)=>(a.layoutOrder||0)-(b.layoutOrder||0)||a.name.localeCompare(b.name)));});
-    const pos=new Map();let maxW=0;
+    const pos=new Map();let maxW=0; const placedUnits=new Map();
     [...rows.keys()].sort((a,b)=>a-b).forEach(d=>{
-      const familyUnits=rows.get(d).sort((a,b)=>{const ao=Math.min(...a.map(p=>p.layoutOrder||0)),bo=Math.min(...b.map(p=>p.layoutOrder||0));return (ao-bo)||a[0].name.localeCompare(b[0].name);});let x=pad;
-      familyUnits.forEach(members=>{members.forEach((p,i)=>{pos.set(p.id,{x,y:pad+22+d*(cardH+rowGap)});x+=cardW+(i<members.length-1?spouseGap:0);});x+=unitGap;});
-      maxW=Math.max(maxW,x);
+      const familyUnits=rows.get(d).sort((a,b)=>{const ao=Math.min(...a.map(p=>p.layoutOrder||0)),bo=Math.min(...b.map(p=>p.layoutOrder||0));return (ao-bo)||a[0].name.localeCompare(b[0].name);});
+      const unitWidth=members=>members.length*cardW+Math.max(0,members.length-1)*spouseGap;
+      const groups=new Map();
+      familyUnits.forEach(members=>{const parents=(members[0].parentIds||[]).filter(id=>pos.has(id)).sort();if(!parents.length)return;const key=parents.join('|');if(!groups.has(key))groups.set(key,{parents,units:[]});groups.get(key).units.push(members);});
+      const placements=[...groups.values()].map(group=>{
+        const parentRects=group.parents.map(id=>{const p=pos.get(id);return {left:p.x,right:p.x+cardW};});
+        const target=(Math.min(...parentRects.map(r=>r.left))+Math.max(...parentRects.map(r=>r.right)))/2;
+        group.units.sort((a,b)=>Math.min(...a.map(p=>p.layoutOrder||0))-Math.min(...b.map(p=>p.layoutOrder||0))||a[0].name.localeCompare(b[0].name));
+        const width=group.units.reduce((sum,m)=>sum+unitWidth(m),0)+unitGap*Math.max(0,group.units.length-1);
+        return {group,target,width};
+      }).sort((a,b)=>a.target-b.target);
+      let cursor=pad;
+      placements.forEach(({group,target,width})=>{
+        let x=Math.max(target-width/2,cursor);
+        group.units.forEach(members=>{members.forEach((p,i)=>{pos.set(p.id,{x,y:pad+22+d*(cardH+rowGap)});x+=cardW+(i<members.length-1?spouseGap:0);});x+=unitGap;});
+        cursor=x+unitGap;
+      });
+      const unplaced=familyUnits.filter(members=>!members.some(p=>pos.has(p.id)));
+      unplaced.forEach(members=>{members.forEach((p,i)=>{pos.set(p.id,{x:cursor,y:pad+22+d*(cardH+rowGap)});cursor+=cardW+(i<members.length-1?spouseGap:0);});cursor+=unitGap;});
+      maxW=Math.max(maxW,cursor);
     });
     const maxD=Math.max(0,...rows.keys()),height=pad*2+22+(maxD+1)*(cardH+rowGap);let lines="",cards="";
     const center=p=>p.x+cardW/2;
@@ -344,7 +413,7 @@
       items.sort((a,b)=>a.cc-b.cc);
       items.forEach((g,i)=>{
         // Keep unrelated two-parent branches on visibly distinct routing lanes.
-        const mid=g.pBar+(g.cBar-g.pBar)*(i+1)/(items.length+1);
+        const mid=g.pBar+(g.cBar-g.pBar)/2;
         if(g.ps.length>1){
           g.ps.forEach(p=>{lines+=`<path d="M${center(p)} ${p.y+cardH} V${g.pBar}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
           lines+=`<path d="M${Math.min(...g.parentXs)} ${g.pBar} H${Math.max(...g.parentXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
