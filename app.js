@@ -152,39 +152,38 @@
     const cx = r => r.left + r.width / 2 - rootRect.left;
     const top = r => r.top - rootRect.top;
     const bottom = r => r.bottom - rootRect.top;
-    [...groups.entries()].forEach(([groupKey, group], groupIndex) => {
+    const routedGroups = [...groups.entries()].map(([groupKey, group]) => {
       const parentEls = group.parents.map(id=>byId.get(id)).filter(Boolean);
       const childEls = group.children.map(id=>byId.get(id)).filter(Boolean);
-      if (!parentEls.length || !childEls.length) return;
+      if (!parentEls.length || !childEls.length) return null;
       const pr = parentEls.map(el=>el.getBoundingClientRect());
       const cr = childEls.map(el=>el.getBoundingClientRect());
       const px = pr.map(cx), py = Math.max(...pr.map(bottom));
       const childXs = cr.map(cx).sort((a,b)=>a-b), childTop = Math.min(...cr.map(top));
-      // Give each distinct parent set its own connector lane so cousin branches
-      // do not visually merge when their children happen to sit next to each other.
-      const lane = (groupIndex % 9) * 7;
-      const parentBarY = py + 15 + lane;
-      const childBarY = childTop - 15 - lane;
+      const parentBarY = py + 15, childBarY = childTop - 15;
       const parentCenter = (Math.min(...px) + Math.max(...px)) / 2;
       const childCenter = (Math.min(...childXs) + Math.max(...childXs)) / 2;
-      // A single-parent branch must originate only from that parent's card.
-      // Route its horizontal elbow immediately above the child row, not midway
-      // between generations where it can visually run beneath an uncle's card.
-      if (pr.length === 1) {
-        const parentX = cx(pr[0]);
-        const elbowY = childTop - 15;
-        paths.push(`M${parentX} ${bottom(pr[0])} V${elbowY} H${childCenter}`);
-        if (childXs.length > 1) paths.push(`M${Math.min(...childXs)} ${elbowY} H${Math.max(...childXs)}`);
-        cr.forEach(r => paths.push(`M${cx(r)} ${elbowY} V${top(r)}`));
-        return;
-      }
-      const midY = (parentBarY + childBarY) / 2;
-      // Multiple parents share a traditional right-angle parent junction.
-      pr.forEach(r => paths.push(`M${cx(r)} ${bottom(r)} V${parentBarY}`));
-      paths.push(`M${Math.min(...px)} ${parentBarY} H${Math.max(...px)}`);
-      paths.push(`M${parentCenter} ${parentBarY} V${midY} H${childCenter} V${childBarY}`);
-      if (childXs.length > 1) paths.push(`M${Math.min(...childXs)} ${childBarY} H${Math.max(...childXs)}`);
-      cr.forEach(r=>paths.push(`M${cx(r)} ${childBarY} V${top(r)}`));
+      const band = `${Math.round(py)}:${Math.round(childTop)}`;
+      return {pr,cr,px,childXs,parentBarY,childBarY,parentCenter,childCenter,band};
+    }).filter(Boolean);
+    // Give overlapping family branches distinct horizontal routing lanes. Sorting
+    // by child position makes the left branch use the upper lane and the right
+    // branch the lower lane, preventing unrelated paths from forming T-junctions.
+    const bands = new Map();
+    routedGroups.forEach(g=>{if(!bands.has(g.band))bands.set(g.band,[]);bands.get(g.band).push(g);});
+    bands.forEach(items=>{
+      items.sort((a,b)=>a.childCenter-b.childCenter);
+      items.forEach((g,i)=>{
+        const offset=(i-(items.length-1)/2)*14;
+        const midY=Math.max(g.parentBarY+7,Math.min(g.childBarY-7,(g.parentBarY+g.childBarY)/2+offset));
+        if(g.pr.length>1){
+          g.pr.forEach(r=>paths.push(`M${cx(r)} ${bottom(r)} V${g.parentBarY}`));
+          paths.push(`M${Math.min(...g.px)} ${g.parentBarY} H${Math.max(...g.px)}`);
+        }
+        paths.push(`M${g.parentCenter} ${g.pr.length>1?g.parentBarY:bottom(g.pr[0])} V${midY} H${g.childCenter} V${g.childBarY}`);
+        if(g.childXs.length>1) paths.push(`M${Math.min(...g.childXs)} ${g.childBarY} H${Math.max(...g.childXs)}`);
+        g.cr.forEach(r=>paths.push(`M${cx(r)} ${g.childBarY} V${top(r)}`));
+      });
     });
     const svg = `<svg class="tree-lines" aria-hidden="true" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${paths.map(d=>`<path d="${d}"/>`).join('')}</svg>`;
     root.insertAdjacentHTML('afterbegin', svg);
@@ -300,22 +299,31 @@
     });
     const childGroups=new Map();
     people.forEach(child=>{const parents=child.parentIds.filter(id=>pos.has(id)).sort();if(!parents.length)return;const key=parents.join('|');if(!childGroups.has(key))childGroups.set(key,{parents,children:[]});childGroups.get(key).children.push(child.id);});
-    childGroups.forEach(group=>{
-      const ps=group.parents.map(id=>pos.get(id)),cs=group.children.map(id=>pos.get(id));if(!ps.length||!cs.length)return;
-      const parentXs=ps.map(center),childXs=cs.map(center),parentBottom=Math.max(...ps.map(p=>p.y+cardH)),childTop=Math.min(...cs.map(p=>p.y));
-      const pBar=parentBottom+17,cBar=childTop-17,pc=(Math.min(...parentXs)+Math.max(...parentXs))/2,cc=(Math.min(...childXs)+Math.max(...childXs))/2,mid=(pBar+cBar)/2;
-      if(ps.length===1){
-        const elbowY=childTop-17, parentX=center(ps[0]);
-        lines+=`<path d="M${parentX} ${ps[0].y+cardH} V${elbowY} H${cc}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
-        if(childXs.length>1)lines+=`<path d="M${Math.min(...childXs)} ${elbowY} H${Math.max(...childXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
-        cs.forEach(p=>{lines+=`<path d="M${center(p)} ${elbowY} V${p.y}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
-        return;
-      }
-      ps.forEach(p=>{lines+=`<path d="M${center(p)} ${p.y+cardH} V${pBar}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
-      lines+=`<path d="M${Math.min(...parentXs)} ${pBar} H${Math.max(...parentXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
-      lines+=`<path d="M${pc} ${pBar} V${mid} H${cc} V${cBar}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
-      if(childXs.length>1)lines+=`<path d="M${Math.min(...childXs)} ${cBar} H${Math.max(...childXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
-      cs.forEach(p=>{lines+=`<path d="M${center(p)} ${cBar} V${p.y}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
+    const routedExportGroups=[...childGroups.values()].map(group=>{
+      const ps=group.parents.map(id=>pos.get(id)),cs=group.children.map(id=>pos.get(id));
+      if(!ps.length||!cs.length)return null;
+      const parentXs=ps.map(center),childXs=cs.map(center).sort((a,b)=>a-b);
+      const parentBottom=Math.max(...ps.map(p=>p.y+cardH)),childTop=Math.min(...cs.map(p=>p.y));
+      const pBar=parentBottom+17,cBar=childTop-17;
+      const pc=(Math.min(...parentXs)+Math.max(...parentXs))/2;
+      const cc=(Math.min(...childXs)+Math.max(...childXs))/2;
+      return {ps,cs,parentXs,childXs,parentBottom,childTop,pBar,cBar,pc,cc,band:`${parentBottom}:${childTop}`};
+    }).filter(Boolean);
+    const exportBands=new Map();
+    routedExportGroups.forEach(g=>{if(!exportBands.has(g.band))exportBands.set(g.band,[]);exportBands.get(g.band).push(g);});
+    exportBands.forEach(items=>{
+      items.sort((a,b)=>a.cc-b.cc);
+      items.forEach((g,i)=>{
+        const offset=(i-(items.length-1)/2)*14;
+        const mid=Math.max(g.pBar+7,Math.min(g.cBar-7,(g.pBar+g.cBar)/2+offset));
+        if(g.ps.length>1){
+          g.ps.forEach(p=>{lines+=`<path d="M${center(p)} ${p.y+cardH} V${g.pBar}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
+          lines+=`<path d="M${Math.min(...g.parentXs)} ${g.pBar} H${Math.max(...g.parentXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
+        }
+        lines+=`<path d="M${g.pc} ${g.ps.length>1?g.pBar:g.parentBottom} V${mid} H${g.cc} V${g.cBar}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
+        if(g.childXs.length>1)lines+=`<path d="M${Math.min(...g.childXs)} ${g.cBar} H${Math.max(...g.childXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
+        g.cs.forEach(p=>{lines+=`<path d="M${center(p)} ${g.cBar} V${p.y}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
+      });
     });
     people.forEach(p=>{const a=pos.get(p.id);if(!a)return;const fill=p.status==="Deceased"?"#eee2dc":"#f7faf7";cards+=`<g><rect x="${a.x}" y="${a.y}" width="${cardW}" height="${cardH}" rx="10" fill="${fill}" stroke="#aab8ad"/><text x="${a.x+12}" y="${a.y+24}" font-family="Arial" font-size="14" font-weight="700" fill="#242a28">${xmlEscape(p.name.slice(0,28))}</text><text x="${a.x+12}" y="${a.y+44}" font-family="Arial" font-size="11" fill="#65736a">${xmlEscape(p.relationship.slice(0,32))}</text><text x="${a.x+12}" y="${a.y+70}" font-family="Arial" font-size="10" fill="#65736a">${xmlEscape(p.phone.slice(0,32))}</text></g>`;});
     const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW+pad}" height="${height}" viewBox="0 0 ${maxW+pad} ${height}"><rect width="100%" height="100%" fill="#fffdf9"/><text x="${pad}" y="20" font-family="Arial" font-size="16" font-weight="700" fill="#315d4c">Family Tree</text>${lines}${cards}</svg>`;
