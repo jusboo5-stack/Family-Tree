@@ -167,14 +167,21 @@
       const childBarY = childTop - 15 - lane;
       const parentCenter = (Math.min(...px) + Math.max(...px)) / 2;
       const childCenter = (Math.min(...childXs) + Math.max(...childXs)) / 2;
-      const midY = (parentBarY + childBarY) / 2;
-      // Use traditional right-angle family-tree connectors, never diagonal V-shaped lines.
-      // Each parent drops vertically to a shared horizontal parent bar. This bar sits
-      // below the cards, so it does not replace the three-dash spouse indicator.
-      pr.forEach(r => paths.push(`M${cx(r)} ${bottom(r)} V${parentBarY}`));
-      if (px.length > 1) {
-        paths.push(`M${Math.min(...px)} ${parentBarY} H${Math.max(...px)}`);
+      // A single-parent branch must originate only from that parent's card.
+      // Route its horizontal elbow immediately above the child row, not midway
+      // between generations where it can visually run beneath an uncle's card.
+      if (pr.length === 1) {
+        const parentX = cx(pr[0]);
+        const elbowY = childTop - 15;
+        paths.push(`M${parentX} ${bottom(pr[0])} V${elbowY} H${childCenter}`);
+        if (childXs.length > 1) paths.push(`M${Math.min(...childXs)} ${elbowY} H${Math.max(...childXs)}`);
+        cr.forEach(r => paths.push(`M${cx(r)} ${elbowY} V${top(r)}`));
+        return;
       }
+      const midY = (parentBarY + childBarY) / 2;
+      // Multiple parents share a traditional right-angle parent junction.
+      pr.forEach(r => paths.push(`M${cx(r)} ${bottom(r)} V${parentBarY}`));
+      paths.push(`M${Math.min(...px)} ${parentBarY} H${Math.max(...px)}`);
       paths.push(`M${parentCenter} ${parentBarY} V${midY} H${childCenter} V${childBarY}`);
       if (childXs.length > 1) paths.push(`M${Math.min(...childXs)} ${childBarY} H${Math.max(...childXs)}`);
       cr.forEach(r=>paths.push(`M${cx(r)} ${childBarY} V${top(r)}`));
@@ -297,8 +304,15 @@
       const ps=group.parents.map(id=>pos.get(id)),cs=group.children.map(id=>pos.get(id));if(!ps.length||!cs.length)return;
       const parentXs=ps.map(center),childXs=cs.map(center),parentBottom=Math.max(...ps.map(p=>p.y+cardH)),childTop=Math.min(...cs.map(p=>p.y));
       const pBar=parentBottom+17,cBar=childTop-17,pc=(Math.min(...parentXs)+Math.max(...parentXs))/2,cc=(Math.min(...childXs)+Math.max(...childXs))/2,mid=(pBar+cBar)/2;
+      if(ps.length===1){
+        const elbowY=childTop-17, parentX=center(ps[0]);
+        lines+=`<path d="M${parentX} ${ps[0].y+cardH} V${elbowY} H${cc}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
+        if(childXs.length>1)lines+=`<path d="M${Math.min(...childXs)} ${elbowY} H${Math.max(...childXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
+        cs.forEach(p=>{lines+=`<path d="M${center(p)} ${elbowY} V${p.y}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
+        return;
+      }
       ps.forEach(p=>{lines+=`<path d="M${center(p)} ${p.y+cardH} V${pBar}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
-      if(parentXs.length>1)lines+=`<path d="M${Math.min(...parentXs)} ${pBar} H${Math.max(...parentXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
+      lines+=`<path d="M${Math.min(...parentXs)} ${pBar} H${Math.max(...parentXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
       lines+=`<path d="M${pc} ${pBar} V${mid} H${cc} V${cBar}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
       if(childXs.length>1)lines+=`<path d="M${Math.min(...childXs)} ${cBar} H${Math.max(...childXs)}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;
       cs.forEach(p=>{lines+=`<path d="M${center(p)} ${cBar} V${p.y}" stroke="#a9bdb0" stroke-width="2" fill="none"/>`;});
